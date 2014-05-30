@@ -52,7 +52,7 @@ def run(args, opts, config):
 
 	probe = {x: config.get(probename,x) for x in config.options(probename)}
 
-	req = StatusIPRequest(probe['secret'], '217.155.42.217', probe_uuid=probe['uuid'] )
+	req = StatusIPRequest(probe['secret'], probe_uuid=probe['uuid'] )
 	code, data = req.execute()
 
 	logging.info("Status: %s, %s", code, data)
