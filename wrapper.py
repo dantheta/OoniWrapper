@@ -1,153 +1,137 @@
+#!/usr/bin/env python
 
 import os
 import sys
+import json
 import time
+import yaml
 import getopt
-import ConfigParser
-import requests
+import signal
+import socket
 import logging
-import hashlib
+import datetime
 import tempfile
-
 import subprocess
+import ConfigParser
 
-from api import *
+from amqplib import client_0_8 as amqp
+
+from signing import RequestSigner
+from api import StatusIPRequest,APIRequest
 
 
-def register(opts, config):
-	req = PrepareProbeRequest(opts['--secret'], email=opts['--email'])
-	code, data = req.execute()
+optargs, optlist = getopt.getopt(sys.argv[1:],'vc:')
+opts = dict(optargs)
 
-	print code, data
+logging.basicConfig(
+	level=logging.DEBUG if '-v' in opts else logging.INFO,
+	datefmt="[%Y-%m-%d %H:%M:%S]",
+	format="%(asctime)s\t%(levelname)s\t%(message)s"
+)
 
-	if data['success'] is not True:
-		logging.error("Unable to prepare probe: %s", data)
-		return
+cfg = ConfigParser.ConfigParser()
+read = cfg.read([opts['-c']] if '-c' in opts else ['wrapper.ini'])
+assert len(read) > 0
 
-	probe_uuid = hashlib.md5(opts['--seed']+'-'+data['probe_hmac']).hexdigest()
-	req2 = RegisterProbeRequest(opts['--secret'], email=opts['--email'],
-		probe_seed=opts['--seed'],
-		probe_uuid=probe_uuid,
-		type='raspi',
-		)
-	code2,data2 = req2.execute()
-	print code2,data2
-
-	if data2['success'] is not True:
-		logging.error("Unable to prepare probe: %s", data2)
-		return
-
-	config.add_section(opts['--seed'])
-	config.set(opts['--seed'], 'uuid', probe_uuid)
-	config.set(opts['--seed'], 'secret', data2['secret'])
+if cfg.has_section('api'):
+	for k,v in cfg.items('api'):
+		if k == 'https':
+			setattr(APIRequest,k.upper(),v.lower()=='true')
+		else:
+			setattr(APIRequest,k.upper(),v)
 	
+signer = RequestSigner(cfg.get('probe','secret'))
 
-def run(args, opts, config):
-	if len(args) > 0:
-		probename = args[0]
-	else:
-		probename = [x for x in config.sections() if x not in ('api','global')][0]
+ENV = {k.upper():v for (k,v) in cfg.items('environment')}
+logging.info("Environment: %s", ENV)
 
-	logging.info("Using probe: %s", probename)
+args = []
+if cfg.has_option('probe','public_ip'):
+	args.append( cfg.get('probe','public_ip'))
 
-	probe = {x: config.get(probename,x) for x in config.options(probename)}
-
-	req = StatusIPRequest(probe['secret'], '217.155.42.217', probe_uuid=probe['uuid'] )
-	code, data = req.execute()
-
-	logging.info("Status: %s, %s", code, data)
-	if data['success'] != True:
-		logging.warn("Unable to get status: %s", data['error'])
-		return 1
-
-	isp = data['isp']
-
-	while True:
-		rq = RequestHttptRequest(probe['secret'], 
-			probe_uuid=probe['uuid'], 
-			batchsize=config.getint('global','fetch'),
-			network_name=isp
-			)
-		code, data = rq.execute()
-		if code == 404:
-			time.sleep(config.getint('global','interval'))
-			continue
-
-		if code != 200:
-			logging.error("Error getting URLs: %s", data)
-			return
-
-		fp = tempfile.NamedTemporaryFile(delete=False)
-		for url in data['urls']:
-			print >>fp, url['url']
-		fp.close()
-
-		# do stuff
-		try:
-			proc = subprocess.Popen(
-				[config.get('global','ooniprobe')] + 
-				config.get('global','args').split(' ') + 
-				['-f', fp.name])
-			proc.wait()
-		except OSError:
-			logging.error("Unable to launch OONI")
-			return
-
-		finally:
-			#os.unlink(fp.name)
-			pass
-
-		time.sleep(config.getint('global','interval'))
+req = StatusIPRequest(signer, *args, probe_uuid=cfg.get('probe','uuid'))
+ret, ip = req.execute()
+logging.info("Return: %s", ip)
+queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + cfg.get('probe','queue')
 
 
+amqpopts = dict(cfg.items('amqp'))
 
+logging.info("Opening AMQP connection")
+conn = amqp.Connection(**amqpopts)
+ch = conn.channel()
+urls = []
+
+
+def write(urls):
+	fp = tempfile.NamedTemporaryFile()
+	for url in urls:
+		print >>fp, url
+	fp.flush()
+	return fp
+
+def run(tmpfp):
+	with open(cfg.get('global','template')) as fp:
+		data = yaml.load(fp)
+	for test in data:
+		test['options']['subargs'][1] = tmpfp.name
+
+	deckfp = tempfile.NamedTemporaryFile()
+	deckfp.write(yaml.dump(data))
+	deckfp.flush()
+	
+	env = ENV.copy()
+	env['PROBE_ID'] = cfg.get('probe','uuid')
+	env['PROBE_AUTH'] = signer.sign(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S'))
 		
-	
-
-def main():
-	optlist, optargs = getopt.getopt(sys.argv[1:],
-		'c:v',
-		['register','email=','secret=','seed=']
+	st = time.time()
+	proc = subprocess.Popen(
+		[cfg.get('global','oonipath'),'-i',deckfp.name],
+		env=env
 		)
-	opts = dict(optlist)
-	logging.basicConfig(
-		level = logging.DEBUG if '-v' in opts else logging.INFO,
-		datefmt = '[%Y-%m-%d %H:%M:%S]',
-		format='%(asctime)s\t%(name)s\t%(levelname)s\t%(message)s')
+	ret = proc.wait()
+	logging.info("Test complete: duration %s", time.time() - st)
+	tmpfp.close()
+	deckfp.close()
 
-	configfile = opts.get('-c','ooniwrapper.ini')
-	config = ConfigParser.ConfigParser()
-	loaded = config.read([configfile])
-	logging.info("Loaded %s config files from %s", loaded, configfile)
+def consume(msg):
+	"""Direct execution"""
+	data = json.loads(msg.body)
+	logging.info("Got url: %s", data['url'])
+	ch.basic_ack(msg.delivery_tag)
+	
+	fp = write([data['url']])
+	run(fp)
 
-	if not config.has_section('global'):
-		config.add_section('global')
-		config.set('global','fetch',100)
-		config.set('global','interval',90)
-		config.set('global','ooniprobe','ooniprobe')
-		config.set('global','args','')
-		with open(configfile,'w') as fp:
-			config.write(fp)
+def consume2(msg):
+	"""Gather URLs"""
+	data = json.loads(msg.body)
+	logging.info("Got url: %s", data['url'])
+	ch.basic_ack(msg.delivery_tag)
+	
+	urls.append(data['url'])
+	signal.alarm(0)
+	signal.alarm(int(cfg.get('global','interval')))
 
-	if config.has_section('api'):
-		for (key, value) in config.items('api'):
-			logging.debug("Setting API %s = %s", key, value)
-			if key == 'https':
-				APIRequest.HTTPS = (value == 'True')
-			else:
-				setattr(APIRequest, key.upper(), value)
+logging.info("Listening on queue: %s", queue)
+ch.basic_qos(0,cfg.getint('probe','qos'),False)
+ch.basic_consume(queue, consumer_tag='consumer1',callback=consume2)
+while True:
+	signal.alarm(int(cfg.get('global','interval')))
+	def stop(*args):
+		logging.debug("Timeout")
+	signal.signal(signal.SIGALRM,stop)
+	while True:
+		try:
+			ch.wait()
+		except socket.error:
+			break
+	if urls:
+		logging.info("Got urls: %s", urls)
+		fp = write(urls)
+		run(fp)
+		del urls[:]
+
+conn.close()
 
 
-	if '--register' in opts:
-		register(opts, config)
-		with open(configfile,'w') as fp:
-			config.write(fp)
-		sys.exit(0)
-
-	else:
-		logging.info("Entering run mode")
-		run(optargs, opts, config)
-		sys.exit(0)
-
-if __name__ == '__main__':
-	main()
