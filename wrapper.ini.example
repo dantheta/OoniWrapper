@@ -12,8 +12,7 @@ version=1.2
 [global]
 interval=2
 oonipath=/ooni/bin/ooniprobe
-template=/ooni/bin/sample.deck
-test=blocking/http_requests
+nettest=blocking/http_requests
 
 [probe]
 queue=org

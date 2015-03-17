@@ -14,8 +14,6 @@ import tempfile
 import subprocess
 import ConfigParser
 
-from amqplib import client_0_8 as amqp
-
 from signing import RequestSigner
 from api import StatusIPRequest,APIRequest
 
@@ -32,6 +30,7 @@ logging.basicConfig(
 cfg = ConfigParser.ConfigParser()
 read = cfg.read([opts['-c']] if '-c' in opts else ['wrapper.ini'])
 assert len(read) > 0
+signer = RequestSigner(cfg.get('probe','secret'))
 
 if cfg.has_section('api'):
 	for k,v in cfg.items('api'):
@@ -40,98 +39,36 @@ if cfg.has_section('api'):
 		else:
 			setattr(APIRequest,k.upper(),v)
 	
-signer = RequestSigner(cfg.get('probe','secret'))
 
 ENV = {k.upper():v for (k,v) in cfg.items('environment')}
 logging.info("Environment: %s", ENV)
+ENV['PROBE_UUID'] = cfg.get('probe','uuid')
+ENV['PROBE_AUTH'] = signer.sign(cfg.get('probe','uuid'))
 
 args = []
 if cfg.has_option('probe','public_ip'):
+	logging.warn("Using hard-coded IP: %s",  cfg.get('probe','public_ip'))
 	args.append( cfg.get('probe','public_ip'))
 
-req = StatusIPRequest(signer, *args, probe_uuid=cfg.get('probe','uuid'))
-ret, ip = req.execute()
-logging.info("Return: %s", ip)
-queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + cfg.get('probe','queue')
+# while True:
+if True:
 
+	# get network name and queue
+	req = StatusIPRequest(signer, *args, probe_uuid=cfg.get('probe','uuid'))
+	ret, ip = req.execute()
+	logging.info("Return: %s", ip)
+	queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + cfg.get('probe','queue')
 
-amqpopts = dict(cfg.items('amqp'))
-
-logging.info("Opening AMQP connection")
-conn = amqp.Connection(**amqpopts)
-ch = conn.channel()
-urls = []
-
-
-def write(urls):
-	fp = tempfile.NamedTemporaryFile()
-	for url in urls:
-		print >>fp, url
-	fp.flush()
-	return fp
-
-def run(tmpfp):
-	with open(cfg.get('global','template')) as fp:
-		data = yaml.load(fp)
-	for test in data:
-		test['options']['subargs'][1] = tmpfp.name
-
-	deckfp = tempfile.NamedTemporaryFile()
-	deckfp.write(yaml.dump(data))
-	deckfp.flush()
-	
-	env = ENV.copy()
-	env['PROBE_ID'] = cfg.get('probe','uuid')
-	env['PROBE_AUTH'] = signer.sign(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S'))
+	amqp_url = "amqp://{Q[userid]}:{Q[password]}@{Q[host]}:{Q[port]}{Q[vhost]}/{queue}".format(
+		Q = dict(config.items('amqp')),
+		queue=queue
+		}
 		
-	st = time.time()
 	proc = subprocess.Popen(
-		[cfg.get('global','oonipath'),'-i',deckfp.name],
-		env=env
+		[cfg.get('global','oonipath'),'-Q',amqp_url, cfg.get('global','nettest')],
+		env=ENV
 		)
 	ret = proc.wait()
-	logging.info("Test complete: duration %s", time.time() - st)
-	tmpfp.close()
-	deckfp.close()
-
-def consume(msg):
-	"""Direct execution"""
-	data = json.loads(msg.body)
-	logging.info("Got url: %s", data['url'])
-	ch.basic_ack(msg.delivery_tag)
-	
-	fp = write([data['url']])
-	run(fp)
-
-def consume2(msg):
-	"""Gather URLs"""
-	data = json.loads(msg.body)
-	logging.info("Got url: %s", data['url'])
-	ch.basic_ack(msg.delivery_tag)
-	
-	urls.append(data['url'])
-	signal.alarm(0)
-	signal.alarm(int(cfg.get('global','interval')))
-
-logging.info("Listening on queue: %s", queue)
-ch.basic_qos(0,cfg.getint('probe','qos'),False)
-ch.basic_consume(queue, consumer_tag='consumer1',callback=consume2)
-while True:
-	signal.alarm(int(cfg.get('global','interval')))
-	def stop(*args):
-		logging.debug("Timeout")
-	signal.signal(signal.SIGALRM,stop)
-	while True:
-		try:
-			ch.wait()
-		except socket.error:
-			break
-	if urls:
-		logging.info("Got urls: %s", urls)
-		fp = write(urls)
-		run(fp)
-		del urls[:]
-
-conn.close()
+	logging.info("Process ended: %s", ret)
 
 
