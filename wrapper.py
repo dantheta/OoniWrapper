@@ -69,6 +69,11 @@ if True:
 		[cfg.get('global','oonipath'),'-Q',amqp_url, cfg.get('global','nettest')],
 		env=ENV
 		)
+	def on_signal(sig,stack):
+		logging.info("Wrapper received TERM: %s", sig)
+		proc.send_signal(signal.SIGTERM)
+	signal.signal(signal.SIGTERM, on_signal)
+		
 	ret = proc.wait()
 	logging.info("Process ended: %s", ret)
 
