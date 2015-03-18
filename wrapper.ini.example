@@ -6,8 +6,9 @@ host=api.blocked.org.uk
 [api]
 host=api.blocked.org.uk
 https=true
-port=80
+port=443
 version=1.2
+verify=true
 
 [global]
 interval=2

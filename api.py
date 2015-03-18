@@ -15,6 +15,7 @@ class APIRequest(object):
 	HOST = 'api.bowdlerize.co.uk'
 	PORT = 443
 	VERSION='1.2'
+	VERIFY=True
 
 	SEND_TIMESTAMP=True
 	SIG_KEYS = []
@@ -45,14 +46,15 @@ class APIRequest(object):
 			self.args['date'] = self.signer.timestamp()
 		if self.SIG_KEYS and self.signer:
 			self.args['signature'] = self.get_signature()
+		verify = None if not self.HTTPS else self.VERIFY
 		logging.info("Sending args: %s", self.args)
 		try:
 			url = self.get_url()
 			logging.info("Opening ORG Api connection to: %s", url)
 			if self.METHOD == 'GET':
-				rq = requests.get(url, params=self.args)
+				rq = requests.get(url, params=self.args, verify=verify)
 			else:
-				rq = requests.post(url, data=self.args)
+				rq = requests.post(url, data=self.args, verify=verify)
 		except Exception,v:
 			logging.error("API Error: %s", v)
 			raise 

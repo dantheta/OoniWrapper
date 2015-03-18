@@ -34,7 +34,7 @@ signer = RequestSigner(cfg.get('probe','secret'))
 
 if cfg.has_section('api'):
 	for k,v in cfg.items('api'):
-		if k == 'https':
+		if k in ('https','verify'):
 			setattr(APIRequest,k.upper(),v.lower()=='true')
 		else:
 			setattr(APIRequest,k.upper(),v)
