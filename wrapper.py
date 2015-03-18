@@ -60,9 +60,10 @@ if True:
 	queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + cfg.get('probe','queue')
 
 	amqp_url = "amqp://{Q[userid]}:{Q[password]}@{Q[host]}:{Q[port]}{Q[vhost]}/{queue}".format(
-		Q = dict(config.items('amqp')),
+		Q = dict(cfg.items('amqp')),
 		queue=queue
-		}
+		)
+	logging.info("AMQP Url: %s", amqp_url)
 		
 	proc = subprocess.Popen(
 		[cfg.get('global','oonipath'),'-Q',amqp_url, cfg.get('global','nettest')],
