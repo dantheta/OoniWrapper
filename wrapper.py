@@ -50,8 +50,9 @@ if cfg.has_option('probe','public_ip'):
 	logging.warn("Using hard-coded IP: %s",  cfg.get('probe','public_ip'))
 	args.append( cfg.get('probe','public_ip'))
 
+running = True
 #if True:
-while True:
+while running:
 	# get network name and queue
 	req = StatusIPRequest(signer, *args, probe_uuid=cfg.get('probe','uuid'))
 	ret, ip = req.execute()
@@ -70,7 +71,9 @@ while True:
 		)
 
 	def on_signal(sig,stack):
+		global running
 		logging.info("Wrapper received signal: %s", sig)
+		running=False
 		proc.send_signal(signal.SIGINT)
 	signal.signal(signal.SIGTERM, on_signal)
 	signal.signal(signal.SIGINT, on_signal)
