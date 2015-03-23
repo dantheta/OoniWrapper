@@ -50,9 +50,8 @@ if cfg.has_option('probe','public_ip'):
 	logging.warn("Using hard-coded IP: %s",  cfg.get('probe','public_ip'))
 	args.append( cfg.get('probe','public_ip'))
 
-# while True:
-if True:
-
+#if True:
+while True:
 	# get network name and queue
 	req = StatusIPRequest(signer, *args, probe_uuid=cfg.get('probe','uuid'))
 	ret, ip = req.execute()
@@ -78,5 +77,7 @@ if True:
 		
 	ret = proc.wait()
 	logging.info("Process ended: %s", ret)
+	if ret != 0:
+		sys.exit(1)
 
 
