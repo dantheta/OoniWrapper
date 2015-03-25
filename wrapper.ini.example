@@ -14,9 +14,9 @@ verify=true
 interval=2
 oonipath=/ooni/bin/ooniprobe
 nettest=blocking/http_requests
+nettest_args=
 
 [probe]
-queue=org
 qos=15
 uuid=
 secret=

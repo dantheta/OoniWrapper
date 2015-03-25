@@ -57,7 +57,7 @@ while running:
 	req = StatusIPRequest(signer, *args, probe_uuid=cfg.get('probe','uuid'))
 	ret, ip = req.execute()
 	logging.info("Return: %s", ip)
-	queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + cfg.get('probe','queue')
+	queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + optlist[0]
 
 	amqp_url = "amqp://{Q[userid]}:{Q[password]}@{Q[host]}:{Q[port]}{Q[vhost]}/{queue}".format(
 		Q = dict(cfg.items('amqp')),
@@ -66,7 +66,7 @@ while running:
 	logging.info("AMQP Url: %s", amqp_url)
 		
 	proc = subprocess.Popen(
-		[cfg.get('global','oonipath'),'-Q',amqp_url, cfg.get('global','nettest')],
+		[cfg.get('global','oonipath'),'-Q',amqp_url, cfg.get('global','nettest')] + cfg.get('global','nettest_args').split(' '),
 		env=ENV
 		)
 
