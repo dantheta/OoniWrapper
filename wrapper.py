@@ -57,7 +57,7 @@ while running:
 	req = StatusIPRequest(signer, *args, probe_uuid=cfg.get('probe','uuid'))
 	ret, ip = req.execute()
 	logging.info("Return: %s", ip)
-	queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + optlist[0]
+	queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + cfg.get('probe','queue')
 
 	amqp_url = "amqp://{Q[userid]}:{Q[password]}@{Q[host]}:{Q[port]}{Q[vhost]}/{queue}".format(
 		Q = dict(cfg.items('amqp')),

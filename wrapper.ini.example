@@ -17,6 +17,7 @@ nettest=blocking/http_requests
 nettest_args=
 
 [probe]
+queue=org
 qos=15
 uuid=
 secret=
