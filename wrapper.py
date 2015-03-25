@@ -44,6 +44,7 @@ ENV = {k.upper():v for (k,v) in cfg.items('environment')}
 logging.info("Environment: %s", ENV)
 ENV['PROBE_UUID'] = cfg.get('probe','uuid')
 ENV['PROBE_AUTH'] = signer.sign(cfg.get('probe','uuid'))
+ENV['PROBE_QUEUE'] = cfg.get('probe','queue')
 
 args = []
 if cfg.has_option('probe','public_ip'):
