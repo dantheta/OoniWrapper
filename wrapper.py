@@ -67,7 +67,7 @@ while running:
 	logging.info("AMQP Url: %s", amqp_url)
 		
 	proc = subprocess.Popen(
-		[cfg.get('global','oonipath'),'-Q',amqp_url, cfg.get('global','nettest')] + cfg.get('global','nettest_args').split(' '),
+		[cfg.get('global','oonipath'),'-b','','-Q',amqp_url, cfg.get('global','nettest')] + cfg.get('global','nettest_args').split(' '),
 		env=ENV
 		)
 
