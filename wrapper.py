@@ -55,10 +55,13 @@ running = True
 #if True:
 while running:
     # get network name and queue
-    req = StatusIPRequest(signer, *args, probe_uuid=cfg.get('probe','uuid'))
-    ret, ip = req.execute()
-    logging.info("Return: %s", ip)
-    queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + cfg.get('probe','queue')
+    if cfg.has_option('probe','override_network'):
+        queue = "url.{0}.{1}".format(cfg.get('probe','override_network'), cfg.get('probe','queue'))
+    else:
+        req = StatusIPRequest(signer, *args, probe_uuid=cfg.get('probe','uuid'))
+        ret, ip = req.execute()
+        logging.info("Return: %s", ip)
+        queue = 'url.' + (ip['isp'].lower().replace(' ','_')) + '.' + cfg.get('probe','queue')
 
     amqp_url = "amqp://{Q[userid]}:{Q[password]}@{Q[host]}:{Q[port]}{Q[vhost]}/{queue}".format(
         Q = dict(cfg.items('amqp')),

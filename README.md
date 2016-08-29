@@ -16,9 +16,10 @@ To run:
 
 $ python wrapper.py
 
-There is a basic registration function that can be invoked:
+Optional Configuration
+----------------------
 
-$ python wrapper.py --register --email <myemail@example.com> --secret <user secret>
+override_network: In cases where the server-side detection of the client's ISP fails, override_network can be used to hard-code
+a network operator name for the probe.  The configuration item should match the value of queue_name on the server's record for the ISP.
 
-This will run the prepare/probe and register/probe steps, and save the configuration to ooniwrapper.ini.
 
