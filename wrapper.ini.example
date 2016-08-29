@@ -22,6 +22,7 @@ qos=15
 uuid=
 secret=
 ##public_ip=
+##override_network=
 
 [environment]
 PYTHONPATH=/ooni
